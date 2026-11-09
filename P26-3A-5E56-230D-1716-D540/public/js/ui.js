@@ -1,16 +1,19 @@
 // Helpers de interface. Regra de ouro: dado do servidor/usuário entra no DOM só como
 // texto (append de string = nó de texto) ou atributo — nunca como HTML.
 
+// `icone` = nome do <symbol> no sprite do index.html (sem o prefixo "i-"). Nada de emoji como ícone.
 export const CATEGORIAS = {
-  eletronicos: { rotulo: 'Eletrônicos', emoji: '💻' },
-  documentos: { rotulo: 'Documentos', emoji: '🪪' },
-  garrafas: { rotulo: 'Garrafas', emoji: '🥤' },
-  vestuario: { rotulo: 'Vestuário', emoji: '👕' },
+  eletronicos: { rotulo: 'Eletrônicos', icone: 'cat-eletronicos' },
+  documentos: { rotulo: 'Documentos', icone: 'cat-documentos' },
+  garrafas: { rotulo: 'Garrafas', icone: 'cat-garrafas' },
+  vestuario: { rotulo: 'Vestuário', icone: 'cat-vestuario' },
 };
 export const TIPOS = {
-  perdi: { rotulo: 'Perdi' },
-  encontrei: { rotulo: 'Encontrei' },
+  perdi: { rotulo: 'Perdi', icone: 'busca' },
+  encontrei: { rotulo: 'Encontrei', icone: 'encontrei' },
 };
+const ICONE_STATUS_ITEM = { aberto: 'aberto', em_devolucao: 'troca', encerrado: 'arquivo' };
+const ICONE_STATUS_REIV = { pendente: 'relogio', aceita: 'check', recusada: 'x', cancelada: 'proibido', concluida: 'check-duplo' };
 export const STATUS_ITEM = {
   aberto: 'Aberto',
   em_devolucao: 'Em devolução',
@@ -181,28 +184,38 @@ export function tempo(s) {
 }
 
 // ---------- Selos ----------
+// Ícone + texto: a cor nunca é o único sinal (o texto do selo é sempre visível).
 export function seloTipo(tipo) {
   const t = TIPOS[tipo];
-  return el('span', { class: ['selo', `selo--${t ? tipo : 'neutro'}`] }, t ? t.rotulo : String(tipo ?? ''));
+  return el('span', { class: ['selo', `selo--${t ? tipo : 'neutro'}`] },
+    t ? icone(t.icone, 'ico selo-ico') : null, t ? t.rotulo : String(tipo ?? ''));
 }
 
 export function seloStatus(status) {
-  return el('span', { class: ['selo', 'selo--contorno', `selo--st-${STATUS_ITEM[status] ? status : 'neutro'}`] },
-    STATUS_ITEM[status] ?? String(status ?? ''));
+  const ok = Boolean(STATUS_ITEM[status]);
+  return el('span', { class: ['selo', 'selo--contorno', `selo--st-${ok ? status : 'neutro'}`] },
+    icone(ok ? ICONE_STATUS_ITEM[status] : 'alerta', 'ico selo-ico'), STATUS_ITEM[status] ?? String(status ?? ''));
 }
 
 export function seloReiv(status) {
-  return el('span', { class: ['selo', 'selo--contorno', `selo--rv-${STATUS_REIV[status] ? status : 'neutro'}`] },
-    STATUS_REIV[status] ?? String(status ?? ''));
+  const ok = Boolean(STATUS_REIV[status]);
+  return el('span', { class: ['selo', 'selo--contorno', `selo--rv-${ok ? status : 'neutro'}`] },
+    icone(ok ? ICONE_STATUS_REIV[status] : 'alerta', 'ico selo-ico'), STATUS_REIV[status] ?? String(status ?? ''));
 }
 
 export function categoria(cat) {
-  return CATEGORIAS[cat] ?? { rotulo: String(cat ?? 'Outros'), emoji: '📦' };
+  return CATEGORIAS[cat] ?? { rotulo: String(cat ?? 'Outros'), icone: 'cat-outros' };
+}
+
+/** Ícone da categoria, já com a cor da categoria (decorativo: o rótulo aparece em texto ao lado). */
+export function iconeCategoria(cat, classe = 'ico') {
+  const chave = CATEGORIAS[cat] ? cat : 'outros';
+  return icone(categoria(cat).icone, `${classe} cat-tinta--${chave}`);
 }
 
 export function tileCategoria(cat, extra = '') {
-  const c = categoria(cat);
-  return el('span', { class: ['cat-tile', `cat--${CATEGORIAS[cat] ? cat : 'outros'}`, extra], 'aria-hidden': 'true' }, c.emoji);
+  const chave = CATEGORIAS[cat] ? cat : 'outros';
+  return el('span', { class: ['cat-tile', `cat--${chave}`, extra], 'aria-hidden': 'true' }, iconeCategoria(cat));
 }
 
 // ---------- Avisos (toasts) ----------
@@ -294,6 +307,117 @@ export function ligarContador(campo, saida) {
   campo.addEventListener('input', atualizar);
   atualizar();
   return atualizar;
+}
+
+// ---------- Erros junto ao campo ----------
+// A mensagem fica logo abaixo do campo (dentro do .campo), ligada ao controle por aria-describedby,
+// e o controle recebe aria-invalid. Nada de balão do navegador nem erro só no topo do formulário.
+
+const maiuscula = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/** Texto do erro em pt-BR a partir do ValidityState. `nome` é o nome do campo com artigo ("o título"). */
+export function mensagemValidacao(c, nome = 'este campo') {
+  const v = c.validity;
+  if (!v || v.valid) return '';
+  if (v.customError) return c.validationMessage;
+  if (v.valueMissing) return c.type === 'radio' ? `Escolha ${nome}.` : `Preencha ${nome}.`;
+  if (v.tooShort) return `${maiuscula(nome)} precisa de pelo menos ${c.minLength} caracteres (agora tem ${c.value.trim().length}).`;
+  if (v.tooLong) return `${maiuscula(nome)} pode ter no máximo ${c.maxLength} caracteres.`;
+  if (v.badInput) return 'Data incompleta ou inválida. Use dia, mês e ano.';
+  if (v.rangeOverflow) return c.type === 'date' ? 'A data não pode ser no futuro.' : c.validationMessage;
+  if (v.rangeUnderflow) return c.type === 'date' ? 'Use uma data de até 1 ano atrás.' : c.validationMessage;
+  return c.validationMessage;
+}
+
+function controlesDe(ctrl) {
+  if (!ctrl) return [];
+  return typeof RadioNodeList !== 'undefined' && ctrl instanceof RadioNodeList ? [...ctrl] : [ctrl];
+}
+
+export function mostrarErroCampo(ctrl, msg) {
+  const lista = controlesDe(ctrl);
+  const primeiro = lista[0];
+  const caixa = primeiro?.closest('.campo');
+  if (!caixa) return null;
+  const idErro = `erro-${primeiro.form?.id || 'f'}-${primeiro.name || primeiro.id}`;
+  let p = caixa.querySelector(':scope > .erro-campo');
+  if (!p) {
+    p = el('p', { class: 'erro-campo', id: idErro }, icone('alerta'), el('span', {}));
+    caixa.append(p);
+  }
+  p.lastElementChild.textContent = String(msg);
+  for (const c of lista) {
+    c.setAttribute('aria-invalid', 'true');
+    if (c.dataset.descricaoBase === undefined) c.dataset.descricaoBase = c.getAttribute('aria-describedby') ?? '';
+    c.setAttribute('aria-describedby', [c.dataset.descricaoBase, idErro].filter(Boolean).join(' '));
+  }
+  return primeiro;
+}
+
+export function limparErroCampo(ctrl) {
+  const lista = controlesDe(ctrl);
+  lista[0]?.closest('.campo')?.querySelector(':scope > .erro-campo')?.remove();
+  for (const c of lista) {
+    c.removeAttribute('aria-invalid');
+    if (c.dataset.descricaoBase !== undefined) {
+      if (c.dataset.descricaoBase) c.setAttribute('aria-describedby', c.dataset.descricaoBase);
+      else c.removeAttribute('aria-describedby');
+      delete c.dataset.descricaoBase;
+    }
+  }
+}
+
+/** Controles do formulário com validação, um por nome (um grupo de rádio conta uma vez). */
+function controlesValidaveis(form) {
+  const vistos = new Set();
+  const saida = [];
+  for (const c of form.elements) {
+    if (!c.willValidate || !c.name || vistos.has(c.name)) continue;
+    vistos.add(c.name);
+    saida.push(c.type === 'radio' ? form.elements.namedItem(c.name) : c);
+  }
+  return saida;
+}
+
+const primeiroControle = (ctrl) => controlesDe(ctrl)[0];
+
+/**
+ * Valida o formulário inteiro e põe cada erro junto do seu campo. Devolve o primeiro controle
+ * inválido (para receber o foco) ou null se estiver tudo certo. `nomes` = { name: "o título" }.
+ */
+export function validarNoCampo(form, nomes = {}) {
+  let primeiro = null;
+  for (const ctrl of controlesValidaveis(form)) {
+    const c = primeiroControle(ctrl);
+    if (c.checkValidity()) { limparErroCampo(ctrl); continue; }
+    mostrarErroCampo(ctrl, mensagemValidacao(c, nomes[c.name]));
+    primeiro ??= ctrl instanceof Element ? ctrl : (controlesDe(ctrl).find((r) => r.checked) ?? c);
+  }
+  return primeiro;
+}
+
+/**
+ * Validação ao sair do campo (blur), não a cada tecla. Depois que um campo mostrou erro,
+ * ele é revalidado enquanto a pessoa corrige, e o erro some assim que fica válido.
+ */
+export function ligarValidacaoNoCampo(form, nomes = {}) {
+  const revalidar = (alvo, aoSair) => {
+    if (!(alvo instanceof HTMLElement) || !alvo.willValidate || !alvo.name) return;
+    const ctrl = alvo.type === 'radio' ? form.elements.namedItem(alvo.name) : alvo;
+    const c = primeiroControle(ctrl);
+    const temErro = c.getAttribute('aria-invalid') === 'true';
+    if (!temErro && !(aoSair && alvo.value !== '' && alvo.type !== 'radio')) return;
+    if (c.checkValidity()) limparErroCampo(ctrl);
+    else mostrarErroCampo(ctrl, mensagemValidacao(c, nomes[c.name]));
+  };
+  form.addEventListener('focusout', (e) => revalidar(e.target, true));
+  form.addEventListener('input', (e) => revalidar(e.target, false));
+  form.addEventListener('change', (e) => revalidar(e.target, false));
+}
+
+export function limparErrosCampos(form) {
+  for (const ctrl of controlesValidaveis(form)) limparErroCampo(ctrl);
+  for (const p of form.querySelectorAll('.erro-campo')) p.remove();
 }
 
 /** Marca um botão como ocupado (desabilita e mostra spinner via CSS). */

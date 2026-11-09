@@ -4,9 +4,10 @@
 
 import { api } from './api.js';
 import {
-  el, icone, avatar, nomeDe, CATEGORIAS, TIPOS, categoria, tileCategoria,
+  el, icone, avatar, nomeDe, CATEGORIAS, TIPOS, categoria, tileCategoria, iconeCategoria,
   seloTipo, seloStatus, seloReiv, formatarDia, tempo, dataHoraCompleta, hojeISO, umAnoAtrasISO,
   avisar, confirmar, copiar, debounce, ligarContador, validarAparado, ocupado, plural,
+  mostrarErroCampo, validarNoCampo, ligarValidacaoNoCampo, limparErrosCampos,
 } from './ui.js';
 
 const $ = (id) => document.getElementById(id);
@@ -23,6 +24,11 @@ const VALIDOS = {
   ordem: ['recentes', 'antigos'],
 };
 const VISOES = ['vitrine', 'meus', 'reivindicacoes'];
+// Nome de cada campo nas mensagens de erro ("Preencha o título.", "Escolha uma categoria.").
+const NOMES_CAMPOS = {
+  tipo: 'se você perdeu ou encontrou', categoria: 'uma categoria', titulo: 'o título', descricao: 'a descrição',
+  local: 'o local', data_ocorrencia: 'a data', mensagem: 'a mensagem',
+};
 const ABA_DA_VISAO = { vitrine: 'abaVitrine', meus: 'abaMeus', reivindicacoes: 'abaReivs' };
 
 const estado = {
@@ -223,7 +229,7 @@ function montarChips() {
     class: ['chip', valor && `chip--${valor}`],
     'aria-pressed': 'false',
     dataset: { campo: 'tipo', valor },
-  }, valor ? el('span', { class: `ponto ponto--${valor}`, 'aria-hidden': 'true' }) : null,
+  }, valor ? icone(TIPOS[valor].icone, `ico chip-ico chip-ico--${valor}`) : null,
   el('span', {}, rotulo), el('span', { class: 'chip-qtd', dataset: { qtdTipo: valor } })));
 
   const chipsCat = [
@@ -231,7 +237,7 @@ function montarChips() {
       el('span', {}, 'Todas'), el('span', { class: 'chip-qtd', dataset: { qtdCat: '' } })),
     ...Object.entries(CATEGORIAS).map(([valor, c]) => el('button', {
       type: 'button', class: 'chip', 'aria-pressed': 'false', dataset: { campo: 'categoria', valor },
-    }, el('span', { class: 'chip-emoji', 'aria-hidden': 'true' }, c.emoji), el('span', {}, c.rotulo),
+    }, iconeCategoria(valor, 'ico chip-ico'), el('span', {}, c.rotulo),
     el('span', { class: 'chip-qtd', dataset: { qtdCat: valor } }))),
   ];
 
@@ -549,6 +555,7 @@ function abrirNovo() {
   if (!estado.usuario) { location.assign(LOGIN_URL); return; }
   configurarDatasNovo();
   $('novoErro').hidden = true;
+  limparErrosCampos($('formNovo'));
   const dlg = $('dlgNovo');
   if (!dlg.open) dlg.showModal();
   const marcado = dlg.querySelector('input[name="tipo"]:checked');
@@ -564,15 +571,16 @@ function ligarNovo() {
   ];
   $('btnCadastrar').addEventListener('click', abrirNovo);
   $('fab').addEventListener('click', abrirNovo);
+  ligarValidacaoNoCampo(form, NOMES_CAMPOS);
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const erro = $('novoErro');
     erro.hidden = true;
-    limparErrosCampos(form);
     for (const id of ['nTitulo', 'nDescricao', 'nLocal']) validarAparado($(id));
     configurarDatasNovo();
-    if (!form.reportValidity()) return;
+    const invalido = validarNoCampo(form, NOMES_CAMPOS);
+    if (invalido) { invalido.focus(); return; }
 
     const fd = new FormData(form);
     const dados = {
@@ -588,6 +596,7 @@ function ligarNovo() {
     try {
       const r = await api.criarItem(dados);
       form.reset();
+      limparErrosCampos(form);
       contadores.forEach((f) => f());
       $('dlgNovo').close();
       avisar('Item publicado na vitrine!', 'sucesso');
@@ -613,28 +622,9 @@ function mostrarErrosCampos(form, campos) {
   for (const [nome, msg] of Object.entries(campos)) {
     const ctrl = form.elements.namedItem(nome);
     if (!ctrl) continue;
-    const alvo = ctrl instanceof RadioNodeList ? ctrl[0] : ctrl;
-    const caixa = alvo?.closest('.campo');
-    if (!caixa) continue;
-    const idErro = `erro-${form.id || 'f'}-${nome}`;
-    caixa.querySelector('.erro-campo')?.remove();
-    caixa.append(el('p', { class: 'erro-campo', id: idErro }, String(msg)));
-    const campos2 = ctrl instanceof RadioNodeList ? [...ctrl] : [ctrl];
-    for (const c of campos2) {
-      c.setAttribute('aria-invalid', 'true');
-      c.setAttribute('aria-errormessage', idErro);
-    }
-    primeiro ??= alvo;
+    primeiro ??= mostrarErroCampo(ctrl, msg);
   }
   primeiro?.focus();
-}
-
-function limparErrosCampos(form) {
-  for (const p of form.querySelectorAll('.erro-campo')) p.remove();
-  for (const c of form.querySelectorAll('[aria-invalid]')) {
-    c.removeAttribute('aria-invalid');
-    c.removeAttribute('aria-errormessage');
-  }
 }
 
 // ======================================================================
@@ -868,7 +858,7 @@ function formReivindicar(item) {
   const cont = el('span', { class: 'contador', 'aria-hidden': 'true' });
   const erro = el('p', { class: 'erro-form', role: 'alert', hidden: true });
   const enviar = el('button', { type: 'submit', class: 'btn btn--primario' }, icone('conversa'), encontrei ? 'Enviar: esse item é meu' : 'Enviar: eu encontrei');
-  const form = el('form', { class: 'form-reiv', 'aria-labelledby': 'reivTitulo' },
+  const form = el('form', { id: 'formReiv', class: 'form-reiv', 'aria-labelledby': 'reivTitulo', novalidate: true },
     el('h3', { id: 'reivTitulo', class: 'secao-titulo' }, encontrei ? 'É seu? Reivindique' : 'Encontrou? Avise quem perdeu'),
     el('div', { class: 'campo' },
       el('div', { class: 'campo-topo' }, el('label', { for: 'reivMsg' }, 'Mensagem para quem publicou'), cont),
@@ -877,12 +867,13 @@ function formReivindicar(item) {
     erro,
     el('div', { class: 'form-acoes' }, enviar));
   ligarContador(ta, cont);
+  ligarValidacaoNoCampo(form, NOMES_CAMPOS);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     erro.hidden = true;
-    limparErrosCampos(form);
     validarAparado(ta);
-    if (!form.reportValidity()) return;
+    const invalido = validarNoCampo(form, NOMES_CAMPOS);
+    if (invalido) { invalido.focus(); return; }
     ocupado(enviar, true);
     try {
       await api.reivindicar(item.id, ta.value.trim());
@@ -934,7 +925,7 @@ function renderDetalhe({ item, reivs, minha, souAutor, perm, temPendente }) {
 
   // Metadados
   corpo.append(el('ul', { class: 'meta meta--det' },
-    el('li', {}, el('span', { class: 'meta-rotulo' }, 'Categoria'), el('span', {}, `${cat.emoji} ${cat.rotulo}`)),
+    el('li', {}, el('span', { class: 'meta-rotulo' }, 'Categoria'), el('span', {}, iconeCategoria(item.categoria), cat.rotulo)),
     el('li', {}, el('span', { class: 'meta-rotulo' }, 'Local'), el('span', {}, icone('pin'), item.local ?? '')),
     el('li', {}, el('span', { class: 'meta-rotulo' }, item.tipo === 'perdi' ? 'Perdido em' : 'Encontrado em'),
       el('span', {}, icone('calendario'), el('time', { datetime: item.data_ocorrencia ?? '' }, formatarDia(item.data_ocorrencia)))),

@@ -81,7 +81,8 @@ especialistas), sendo **1 dedicado exclusivamente a teste e validação**.
 
 ### Agente 2: Programador Front-end (HTML5 + CSS3 + Vanilla JS)
 - **Definição:** [`.claude/agents/programador-frontend.md`](./.claude/agents/programador-frontend.md)
-- **Skill:** [`skills/vanilla-dom-ui`](./skills/vanilla-dom-ui/SKILL.md)
+- **Skills:** [`skills/vanilla-dom-ui`](./skills/vanilla-dom-ui/SKILL.md) e
+  [`skills/ui-ux-pro-max`](./skills/ui-ux-pro-max/SKILL.md) (revisão de UI/UX, 2ª rodada)
 - **Entregas:** `public/index.html`, `public/css/estilos.css`, `public/js/{api,ui,app,tema}.js`,
   `public/_headers`, `public/favicon.svg`. Filtros cruzados (tipo × categoria × situação × busca × local ×
   datas × ordem) com contadores, sincronizados com a URL; diálogos nativos `<dialog>`; tema claro/escuro;
@@ -125,11 +126,13 @@ especialistas), sendo **1 dedicado exclusivamente a teste e validação**.
 | [`seguranca-web`](./skills/seguranca-web/SKILL.md) | criada para o projeto | Agente 3 |
 | [`teste-validacao`](./skills/teste-validacao/SKILL.md) | criada para o projeto | Agente 4 |
 | [`deploy-cloudflare-pages`](./skills/deploy-cloudflare-pages/SKILL.md) | criada para o projeto | Agente 5 |
+| [`ui-ux-pro-max`](./skills/ui-ux-pro-max/SKILL.md) | terceiros ([nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill), MIT) — inspecionada antes do uso, ver [`ORIGEM.md`](./skills/ui-ux-pro-max/ORIGEM.md) | Agente 2 |
 | [`cloudflare-oficial/wrangler`](./skills/cloudflare-oficial/wrangler/SKILL.md) | oficial da Cloudflare ([cloudflare/skills](https://github.com/cloudflare/skills), Apache-2.0) | Agentes 0 e 5 |
 | [`cloudflare-oficial/workers-best-practices`](./skills/cloudflare-oficial/workers-best-practices/SKILL.md) | oficial da Cloudflare (Apache-2.0) | Agentes 1 e 3 |
 
-As skills da Cloudflare foram copiadas sem alteração e mantêm a licença original
-([`skills/cloudflare-oficial/LICENSE-APACHE-2.0`](./skills/cloudflare-oficial/LICENSE-APACHE-2.0)).
+As skills de terceiros foram copiadas sem alteração de conteúdo e mantêm a licença original
+([`skills/cloudflare-oficial/LICENSE-APACHE-2.0`](./skills/cloudflare-oficial/LICENSE-APACHE-2.0) e
+[`skills/ui-ux-pro-max/LICENSE-MIT-terceiros`](./skills/ui-ux-pro-max/LICENSE-MIT-terceiros)).
 
 ---
 
