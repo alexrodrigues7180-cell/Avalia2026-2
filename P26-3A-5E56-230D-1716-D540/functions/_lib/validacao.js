@@ -268,8 +268,3 @@ export function validarFiltros(params) {
   const ok = Object.keys(erros).length === 0;
   return { ok, valor: ok ? valor : null, erros };
 }
-
-/** Escapa %, _ e \ para uso em LIKE ... ESCAPE '\'. */
-export function escaparLike(texto) {
-  return texto.replace(/[\\%_]/g, (c) => "\\" + c);
-}

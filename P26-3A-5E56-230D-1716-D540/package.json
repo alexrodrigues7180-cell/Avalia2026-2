@@ -9,7 +9,7 @@
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "dev": "wrangler pages dev",
-    "test": "node --test tests/validacao.test.mjs",
+    "test": "node --test tests/validacao.test.mjs tests/estatico.test.mjs",
     "deploy": "wrangler pages deploy --project-name achados-perdidos-campus --branch main",
     "test:api": "bash tests/rodar-api.sh",
     "test:preparar": "bash tests/preparar.sh"

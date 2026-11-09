@@ -109,6 +109,7 @@ encerrado_em, autor: { user_id, username, nome_exibicao, avatar_url }, total_rei
    "Hoje" = data em `America/Sao_Paulo`; intervalo aceito [hoje − 1 ano, hoje].
 5. Filtros: valor vazio = ausente; `q` > 60 → `400`; `de > ate` → `400`; `meus=1` sem login → `401`;
    `contagens` aplicam os filtros antes da paginação; `total_reivindicacoes` ignora `cancelada`.
+   Tetos de entrada: `pagina` 1..10000 e `local` (filtro) até 120 caracteres — acima disso → `400`.
 6. `GET /api/itens/:id` → `{ item, reivindicacoes, permissoes: { eh_autor, pode_reivindicar, pode_encerrar, pode_apagar } }`.
    Criar → `201 { item }` / `201 { reivindicacao }`; aceitar/recusar/cancelar → `{ reivindicacao, item }`;
    encerrar → `{ item }`; DELETE e logout → `{ ok: true }`.
@@ -117,3 +118,6 @@ encerrado_em, autor: { user_id, username, nome_exibicao, avatar_url }, total_rei
 9. Dois índices únicos parciais: 1 reivindicação ativa por usuário/item e 1 `aceita` por item.
 10. OAuth: cookie `oauth_state` com `Path=/api/auth/discord`, sempre expirado no callback; login apaga a sessão anterior.
     Erros: `negado`, `state_invalido`, `oauth_nao_configurado`, `troca_falhou`, `perfil_falhou`, `interno`.
+11. (Auditoria de segurança) No máximo **5 reivindicações por usuário no mesmo item** (qualquer status, inclusive
+    `cancelada`) → `429 limite_excedido`; checado na mesma instrução do INSERT. O resumo `item` dentro de cada
+    reivindicação traz também `autor: { user_id, username, nome_exibicao, avatar_url }` (mesmos campos públicos de `Item.autor`).

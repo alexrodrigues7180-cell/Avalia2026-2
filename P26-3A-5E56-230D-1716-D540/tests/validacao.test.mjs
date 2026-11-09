@@ -6,7 +6,6 @@ import {
   CATEGORIAS,
   TIPOS,
   dataValida,
-  escaparLike,
   hojeNoCampus,
   limparTexto,
   umAnoAntes,
@@ -254,12 +253,5 @@ describe("validarFiltros (4.1 e 6.5)", () => {
   test("de > ate → erro", () => {
     assert.equal(filtros("de=2026-11-09&ate=2026-11-01").ok, false);
     assert.equal(filtros("de=2026-11-01&ate=2026-11-01").ok, true);
-  });
-});
-
-describe("escaparLike (busca segura)", () => {
-  test("escapa %, _ e \\", () => {
-    assert.equal(escaparLike("100%_a\\b"), "100\\%\\_a\\\\b");
-    assert.equal(escaparLike("' OR 1=1 --"), "' OR 1=1 --");
   });
 });

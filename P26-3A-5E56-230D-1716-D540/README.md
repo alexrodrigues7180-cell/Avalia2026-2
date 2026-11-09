@@ -4,47 +4,88 @@
 - **Estudante:** Alexandre Vieira
 - **Turma:** 3A
 - **Chave Única:** `P26-3A-5E56-230D-1716-D540`
-- **URL_CLOUDFLARE:** `https://p26-3a-5e56-230d-1716-d540.pages.dev` *(Atualize com a URL pública real do seu deploy na Cloudflare antes de abrir o Pull Request)*
+- **URL_CLOUDFLARE:** https://achados-perdidos-campus.pages.dev
+- **Repositório:** https://github.com/alexrodrigues7180-cell/Avalia2026-2/tree/main/P26-3A-5E56-230D-1716-D540
+- **Licença:** MIT ([LICENSE](./LICENSE))
 
 ---
 
 ## Especificação do Projeto
 
-Projete um catálogo centralizado para reportar objetos esquecidos ou encontrados nas dependências da universidade. Estudantes autenticados pelo Discord podem cadastrar um item informando categoria (eletrônicos, documentos, garrafas, vestuário), local exato, data e descrição detalhada.
+Catálogo centralizado para reportar objetos esquecidos ou encontrados nas dependências da universidade.
+Estudantes autenticados pelo Discord podem cadastrar um item informando categoria (eletrônicos,
+documentos, garrafas, vestuário), local exato, data e descrição detalhada.
 
-Os registros no Cloudflare D1 operam sob dois tipos: "Perdi" e "Encontrei". A interface em JavaScript puro deve oferecer filtros cruzados rápidos e permitir que um usuário abra uma reivindicação sobre um item listado, registrando o contato do Discord de ambas as partes no banco para que façam a devolução e marquem o caso como encerrado.
+Os registros no Cloudflare D1 operam sob dois tipos: "Perdi" e "Encontrei". A interface em JavaScript
+puro oferece filtros cruzados rápidos e permite que um usuário abra uma reivindicação sobre um item
+listado, registrando o contato do Discord de ambas as partes no banco para que façam a devolução e
+marquem o caso como encerrado.
+
+## O que o sistema faz
+
+- **Login exclusivo com Discord (OAuth2)**: importa `user_id`, nome de usuário e avatar; sessão segura
+  (token aleatório, só o hash no banco, cookie `HttpOnly`/`Secure`/`SameSite`), proteção com `state`.
+- **Vitrine pública** com **filtros cruzados**: Perdi/Encontrei × categoria × situação × busca × local ×
+  intervalo de datas × ordenação, com contadores e filtros guardados na URL (dá para compartilhar).
+- **Cadastro de item** (logado), validado no servidor: tipo, categoria, título, descrição, local e data
+  (não futura, até 1 ano atrás); limite de 10 cadastros por hora.
+- **Reivindicação**: quem acha que o item é seu (ou que achou o item perdido) envia uma mensagem; o
+  banco grava o contato Discord **das duas partes**, visível **só para elas**.
+- **Fluxo de devolução**: o autor aceita ou recusa → item fica "em devolução" e os contatos aparecem →
+  qualquer uma das partes marca como **devolvido/encerrado**. Cancelar a aceita reabre o item.
+- **Painel "Reivindicações"**: recebidas e feitas, com as ações possíveis em cada uma.
+
+Regras completas e contrato da API: [`docs/ESPECIFICACAO.md`](./docs/ESPECIFICACAO.md).
+
+## Arquitetura
+
+| Camada | Tecnologia | Onde |
+|---|---|---|
+| Interface | HTML5 + CSS3 + **JavaScript puro** (ES modules, sem framework) | [`public/`](./public/) |
+| Regras de negócio | **Cloudflare Pages Functions** | [`functions/`](./functions/) |
+| Banco | **Cloudflare D1** (SQLite) — `usuarios`, `sessoes`, `itens`, `reivindicacoes` | [`migrations/`](./migrations/) |
+| Autenticação | **Discord OAuth2** (`scope=identify`) | [`functions/api/auth/`](./functions/api/auth/) |
+| Segurança | CSP estrita, HSTS, CSRF por `Origin`, SQL parametrizado, sem `innerHTML` | [`public/_headers`](./public/_headers), [`docs/AUDITORIA-SEGURANCA.md`](./docs/AUDITORIA-SEGURANCA.md) |
+
+## Agentes, harness e skills
+
+Desenvolvido com **Claude Code** usando 6 agentes (orquestrador, back-end, front-end, auditor de
+segurança, **teste e validação** e publicador Cloudflare). Detalhes em **[AGENTS.md](./AGENTS.md)**,
+definições em [`.claude/agents/`](./.claude/agents/) e skills em [`skills/`](./skills/).
+
+## Rodar localmente
+
+Requer Node.js 20+.
+
+```bash
+npm install
+cp .dev.vars.exemplo .dev.vars        # preencha DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET
+npm run db:migrate:local
+npm run dev                           # http://localhost:8788
+```
+
+Testes:
+
+```bash
+npm test          # unitários + estáticos
+npm run test:api  # sobe o app com D1 local zerado, roda os testes de API e derruba
+```
+
+Validação da rubrica (na raiz do repositório): `node validar-local.mjs P26-3A-5E56-230D-1716-D540`
+
+## Publicar no Cloudflare
+
+Roteiro em [`skills/deploy-cloudflare-pages/SKILL.md`](./skills/deploy-cloudflare-pages/SKILL.md);
+automatizado em [`scripts/publicar.sh`](./scripts/publicar.sh):
+
+```bash
+npx wrangler pages secret put DISCORD_CLIENT_SECRET --project-name achados-perdidos-campus   # 1ª vez
+bash scripts/publicar.sh   # migrações D1 remotas + deploy + verificação
+```
+
+No Discord Developer Portal, o redirect cadastrado é
+`https://achados-perdidos-campus.pages.dev/api/auth/discord/callback`.
 
 ---
 
-## Como Publicar esta Subpasta no Cloudflare Pages + D1 + Discord OAuth2
-
-1. No painel da Cloudflare (**Workers & Pages** → **Create** → **Pages** → **Connect to Git**), selecione o seu fork do repositório `Avalia2026-2`.
-2. Configure os parâmetros de build apontando para esta subpasta:
-   - **Root directory (Diretório raiz):** `P26-3A-5E56-230D-1716-D540`
-   - **Build command:** *(deixe em branco — HTML/CSS/JS puro)*
-   - **Build output directory:** `public`
-3. Crie o banco de dados D1 e aplique a migração inicial (no terminal do laboratório usando Scoop):
-   ```powershell
-   cd P26-3A-5E56-230D-1716-D540
-   npx.cmd wrangler d1 create db-p26-3a-5e56-230d-1716-d540
-   # Copie o database_id gerado para o arquivo wrangler.jsonc e execute:
-   npx.cmd wrangler d1 migrations apply DB --remote
-   ```
-4. **Vincule o Banco D1 ao seu Cloudflare Pages (Obrigatório para ativar env.DB):**
-   - No painel da Cloudflare: acesse seu projeto Pages → **Settings** → **Functions** → **D1 database bindings**.
-   - Clique em **Add binding**:
-     - **Variable name:** `DB`
-     - **D1 database:** selecione o banco que você criou (`db-p26-3a-5e56-230d-1716-d540`).
-5. **Configuração do Discord OAuth2 (Obrigatório para autenticação real):**
-   - Acesse o **Discord Developer Portal** (https://discord.com/developers/applications) e crie uma nova Application.
-   - Na aba **OAuth2**:
-     - Copie o **Client ID** e gere o **Client Secret**.
-     - Em **Redirects**, adicione a URL exata do deploy:
-       `https://p26-3a-5e56-230d-1716-d540.pages.dev/api/auth/discord/callback`
-   - No painel do seu projeto no Cloudflare Pages:
-     - Acesse **Settings** → **Environment variables**.
-     - Adicione as variáveis de ambiente:
-       - `DISCORD_CLIENT_ID`
-       - `DISCORD_CLIENT_SECRET`
-6. Atualize o campo **URL_CLOUDFLARE** no topo deste `README.md` com o endereço público gerado pela Cloudflare.
-7. Na raiz do repositório, execute `node validar-local.mjs P26-3A-5E56-230D-1716-D540` para validar todos os critérios antes de fazer o commit e abrir o Pull Request.
+Chave de auditoria: **P26-3A-5E56-230D-1716-D540**

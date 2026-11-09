@@ -110,6 +110,11 @@ describe("saúde e sessão (seção 3)", () => {
     assert.equal((await get("/api/me", { cabecalhos: { Cookie: `sessao=${hash}` } })).json.usuario, null);
   });
 
+  test("cookie de sessão junto de outros cookies é reconhecido", async () => {
+    const r = await get("/api/me", { cabecalhos: { Cookie: `tema=escuro; sessao=${A.token}; outro=1` } });
+    assert.equal(r.json.usuario?.user_id, A.user_id);
+  });
+
   test("GET /api/auth/discord → 302 para discord.com com scope=identify e cookie oauth_state seguro", async () => {
     const r = await get("/api/auth/discord", { redirect: "manual" });
     assert.equal(r.status, 302);
@@ -136,6 +141,7 @@ describe("saúde e sessão (seção 3)", () => {
     assert.equal(r.status, 302);
     assert.match(r.headers.get("location"), /\/\?erro_login=state_invalido$/);
     assert.doesNotMatch(r.headers.get("set-cookie") || "", /sessao=[A-Za-z0-9_-]/);
+    assert.match(r.headers.get("set-cookie") || "", /oauth_state=;[^,]*Max-Age=0/, "oauth_state sempre expirado no callback (6.10)");
   });
 
   test("callback sem cookie de state → state_invalido; com error=access_denied → negado", async () => {
@@ -268,6 +274,44 @@ describe("POST /api/itens — criação e validação (4.2 e 5)", () => {
   test("JSON que não é objeto (array) → 400", async () => {
     assertErro(await post("/api/itens", { usuario: A, bruto: "[1,2]", cabecalhos: { "Content-Type": "application/json" } }), 400);
   });
+  test("Origin parecido (sufixo/porta diferente) → 403", async () => {
+    const u = new URL(BASE);
+    // Obs.: a variante "https://<mesmo host>" não é testável localmente — o proxy do `wrangler pages dev`
+    // reescreve Origin https://localhost:PORTA para http://localhost:PORTA antes de chegar ao worker
+    // (sondado com um worker de eco; ver docs/RELATORIO-TESTES.md).
+    for (const o of [`${ORIGEM}.evil.example`, `${u.protocol}//${u.hostname}:1`, `${u.protocol}//127.0.0.1:${u.port}`]) {
+      assertErro(await post("/api/itens", { usuario: A, corpo: itemValido(), origem: o }), 403, o);
+    }
+  });
+  test("JSON vazio com Content-Type JSON → 400", async () => {
+    assertErro(await post("/api/itens", { usuario: A, bruto: "", cabecalhos: { "Content-Type": "application/json" } }), 400);
+  });
+  test("corpo de exatamente 8192 bytes é aceito (limite inclusivo)", async () => {
+    const corpo = itemValido({ lixo: "" });
+    const tam = Buffer.byteLength(JSON.stringify(corpo));
+    corpo.lixo = "x".repeat(8192 - tam);
+    const bruto = JSON.stringify(corpo);
+    assert.equal(Buffer.byteLength(bruto), 8192);
+    const r = await post("/api/itens", { usuario: B, bruto, cabecalhos: { "Content-Type": "application/json" } });
+    assert.equal(r.status, 201, r.texto);
+  });
+  test("corpo > 8 KB SEM Content-Length (chunked) → 413", async () => {
+    const dados = new TextEncoder().encode(JSON.stringify(itemValido({ lixo: "y".repeat(9000) })));
+    const stream = new ReadableStream({
+      start(c) {
+        for (let i = 0; i < dados.length; i += 1000) c.enqueue(dados.slice(i, i + 1000));
+        c.close();
+      },
+    });
+    const res = await fetch(BASE + "/api/itens", {
+      method: "POST",
+      duplex: "half",
+      body: stream,
+      headers: { Cookie: `sessao=${B.token}`, Origin: ORIGEM, "Content-Type": "application/json" },
+    });
+    const texto = await res.text();
+    assert.equal(res.status, 413, texto);
+  });
   test("corpo > 8 KB → 413 corpo_grande (6.1)", async () => {
     const r = await post("/api/itens", { usuario: A, corpo: itemValido({ lixo: "x".repeat(9000) }) });
     assertErro(r, 413);
@@ -359,6 +403,34 @@ describe("GET /api/itens — filtros cruzados (4.1 e 6.5)", () => {
     assert.equal(rec[0], Math.max(...rec), "recentes primeiro (padrão)");
   });
 
+  test("pagina além do fim, dentro do teto (6.5: 1..10000) → 200 com lista vazia", async () => {
+    for (const p of [99, 10000]) {
+      const r = await get(`/api/itens?q=${TAG}&pagina=${p}`);
+      assert.equal(r.status, 200, `pagina=${p}: ${r.texto}`);
+      assert.deepEqual(r.json.itens, []);
+      assert.equal(r.json.total, 5);
+    }
+  });
+
+  test("tetos de entrada (6.5): pagina=10001 → 400; local com 121 chars → 400", async () => {
+    assertErro(await get(`/api/itens?pagina=10001`), 400, "pagina=10001");
+    assertErro(await get(`/api/itens?local=${"a".repeat(121)}`), 400, "local 121");
+  });
+
+  test("q e local no tamanho máximo do contrato não quebram (200, nunca 500)", async () => {
+    // q até 60 chars (4.1) e local até 120 (6.5) são VÁLIDOS: devem responder 200 (com 0 itens aqui).
+    const casos = {
+      "q 49 chars": `q=${"a".repeat(49)}`,
+      "q 60 chars": `q=${"a".repeat(60)}`,
+      "q 30 'ã' (60 bytes)": `q=${encodeURIComponent("ã".repeat(30))}`,
+      "q 30 '%' (escapados)": `q=${encodeURIComponent("%".repeat(30))}`,
+      "local 120 chars": `local=${"a".repeat(120)}`,
+    };
+    const obtidos = {};
+    for (const [nome, qs] of Object.entries(casos)) obtidos[nome] = (await get(`/api/itens?${qs}`)).status;
+    assert.deepEqual(obtidos, Object.fromEntries(Object.keys(casos).map((k) => [k, 200])));
+  });
+
   test("valor vazio = ausente", async () => {
     const r = await get(`/api/itens?q=${TAG}&tipo=&categoria=&status=`);
     assert.equal(r.status, 200);
@@ -405,11 +477,19 @@ describe("GET /api/itens — filtros cruzados (4.1 e 6.5)", () => {
     assert.equal(ainda.json.total, ITENS_SEMENTE.length, "tabela itens intacta");
   });
 
-  test("curingas do LIKE são literais: q=% e q=_cinza", async () => {
+  test("curingas são literais: q=%, q=_cinza, q=100%, q=_; q=30×ã → 200", async () => {
     const pct = await get(`/api/itens?q=${encodeURIComponent("%")}&status=todos`);
     assert.deepEqual(pct.json.itens.map((i) => i.titulo), ["Casaco 100% lã"]);
     const und = await get(`/api/itens?q=_cinza&status=todos`);
     assert.deepEqual(und.json.itens.map((i) => i.titulo), ["Casaco 100% lã"], "não pode casar 'fonecinza'");
+    const cem = await get(`/api/itens?q=${encodeURIComponent("100%")}&status=todos`);
+    assert.deepEqual(cem.json.itens.map((i) => i.titulo), ["Casaco 100% lã"], "q=100% só casa '100%' literal");
+    const sub = await get(`/api/itens?q=_&status=todos`);
+    assert.equal(sub.status, 200);
+    assert.deepEqual(sub.json.itens.map((i) => i.titulo), ["Casaco 100% lã"], "q=_ é literal (só 'casaco_cinza' tem _)");
+    const ac = await get(`/api/itens?q=${encodeURIComponent("ã".repeat(30))}&status=todos`);
+    assert.equal(ac.status, 200, ac.texto);
+    assert.equal(ac.json.total, 0);
   });
 });
 
@@ -586,6 +666,10 @@ describe("fluxo de reivindicação, contatos e encerramento (4.3)", () => {
     assert.equal(st[rC.id], "recusada");
   });
 
+  test("total_reivindicacoes conta concluida e recusada (só ignora cancelada)", async () => {
+    assert.equal((await get(`/api/itens/${item.id}`)).json.item.total_reivindicacoes, 2);
+  });
+
   test("encerrado sai da lista padrão e aparece com status=todos", async () => {
     const padrao = await get(`/api/itens?q=Notebook cinza`);
     assert.ok(!padrao.json.itens.some((i) => i.id === item.id));
@@ -674,6 +758,49 @@ describe("recusar, cancelar, encerrar aberto e apagar (4, 4.3, 6.7)", () => {
     assert.deepEqual(r.json, { ok: true });
     assertErro(await get(`/api/itens/${it.id}`), 404);
     assertErro(await del(`/api/itens/${it.id}`, { usuario: E }), 404);
+  });
+
+  test("reivindicante não pode recusar nem aceitar a própria → 403", async () => {
+    const it = await criarItem(C, { titulo: "Boné vermelho", categoria: "vestuario" });
+    const rb = (await reivindicar(B, it.id)).json.reivindicacao;
+    assertErro(await post(`/api/reivindicacoes/${rb.id}/recusar`, { usuario: B }), 403);
+    assertErro(await post(`/api/reivindicacoes/${rb.id}/aceitar`, { usuario: B }), 403);
+  });
+
+  test("DELETE de item aberto com reivindicação pendente → 200 (não há aceita)", async () => {
+    const it = await criarItem(A, { titulo: "Calculadora", categoria: "eletronicos" });
+    const rb = (await reivindicar(B, it.id)).json.reivindicacao;
+    const r = await del(`/api/itens/${it.id}`, { usuario: A });
+    assert.equal(r.status, 200, r.texto);
+    assertErro(await post(`/api/reivindicacoes/${rb.id}/cancelar`, { usuario: B }), 404, "reivindicação foi junto");
+  });
+
+  test("6.11: no máximo 5 reivindicações por usuário no mesmo item (inclui canceladas e recusadas) → 6ª é 429", async () => {
+    const it = await criarItem(C, { titulo: "Lanterna", categoria: "eletronicos" });
+    const st = [];
+    for (let i = 0; i < 5; i += 1) {
+      const r = await reivindicar(E, it.id);
+      st.push(r.status);
+      if (r.status === 201) {
+        // Alterna: E cancela a própria / C (autor) recusa — nenhuma das duas libera cota.
+        const acao = i % 2 === 0 ? ["cancelar", E] : ["recusar", C];
+        const c = await post(`/api/reivindicacoes/${r.json.reivindicacao.id}/${acao[0]}`, { usuario: acao[1] });
+        assert.equal(c.status, 200, c.texto);
+      }
+    }
+    assert.deepEqual(st, [201, 201, 201, 201, 201]);
+    const sexta = await reivindicar(E, it.id);
+    assertErro(sexta, 429, "6ª reivindicação");
+    assert.equal(sexta.json.erro, "limite_excedido");
+    assert.equal((await reivindicar(B, it.id)).status, 201, "o limite é por usuário");
+  });
+
+  test("6.11: resumo item.autor na reivindicação traz só os 4 campos públicos", async () => {
+    const r = await get("/api/reivindicacoes", { usuario: B });
+    const x = r.json.feitas[0];
+    assert.ok(x && x.item && x.item.autor, r.texto.slice(0, 300));
+    assert.deepEqual(Object.keys(x.item.autor).sort(), ["avatar_url", "nome_exibicao", "user_id", "username"]);
+    assert.equal(x.item.autor.user_id, x.item.autor_id);
   });
 
   test("DELETE de item encerrado → 409", async () => {

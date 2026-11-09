@@ -8,7 +8,8 @@
  *
  * Reivindicacao = { id, item_id, status, mensagem, criado_em, atualizado_em,
  *                   reivindicante: { user_id, username, nome_exibicao, avatar_url },
- *                   item: { id, titulo, tipo, categoria, status, autor_id },
+ *                   item: { id, titulo, tipo, categoria, status, autor_id,
+ *                           autor: { user_id, username, nome_exibicao, avatar_url } },
  *                   contato_autor?, contato_reivindicante? }
  *   Os contatos só são incluídos quando quem pede é o autor do item ou o reivindicante
  *   (serializarReivindicacao é o único ponto que monta esse objeto).
@@ -54,10 +55,12 @@ export const SELECT_REIVINDICACAO = `
          r.criado_em, r.atualizado_em,
          ur.username AS reiv_username, ur.nome_exibicao AS reiv_nome_exibicao, ur.avatar_url AS reiv_avatar_url,
          i.titulo AS item_titulo, i.tipo AS item_tipo, i.categoria AS item_categoria, i.status AS item_status,
-         i.autor_id AS item_autor_id
+         i.autor_id AS item_autor_id,
+         ua.username AS autor_username, ua.nome_exibicao AS autor_nome_exibicao, ua.avatar_url AS autor_avatar_url
     FROM reivindicacoes r
     JOIN usuarios ur ON ur.user_id = r.reivindicante_id
-    JOIN itens i ON i.id = r.item_id`;
+    JOIN itens i ON i.id = r.item_id
+    JOIN usuarios ua ON ua.user_id = i.autor_id`;
 
 export function serializarReivindicacao(l, usuarioId) {
   const r = {
@@ -80,6 +83,13 @@ export function serializarReivindicacao(l, usuarioId) {
       categoria: l.item_categoria,
       status: l.item_status,
       autor_id: l.item_autor_id,
+      // Mesmos 4 campos públicos de Item.autor (já expostos em GET /api/itens); nada além.
+      autor: {
+        user_id: l.item_autor_id,
+        username: l.autor_username,
+        nome_exibicao: l.autor_nome_exibicao,
+        avatar_url: l.autor_avatar_url,
+      },
     },
   };
   if (usuarioId && (usuarioId === l.reivindicante_id || usuarioId === l.item_autor_id)) {

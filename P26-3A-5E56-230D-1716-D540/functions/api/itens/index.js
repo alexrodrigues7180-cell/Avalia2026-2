@@ -7,7 +7,7 @@
  * POST /api/itens  (logado) — cria item (4.2). 201 { item: Item }. Limite 10/hora/usuário → 429.
  */
 import { exigirUsuario, falha, json, lerJson, porMetodo } from "../../_lib/http.js";
-import { CATEGORIAS, TIPOS, escaparLike, validarFiltros, validarItem } from "../../_lib/validacao.js";
+import { CATEGORIAS, TIPOS, validarFiltros, validarItem } from "../../_lib/validacao.js";
 import { SELECT_ITEM, buscarItem, serializarItem } from "../../_lib/repositorio.js";
 
 const LIMITE_POR_HORA = 10;
@@ -28,14 +28,18 @@ function montarWhere(f, usuario) {
     clausulas.push(`i.categoria = ?`);
     params.push(f.categoria);
   }
+  // Busca por substring com instr(), não LIKE: o D1 limita o padrão do LIKE a 50 bytes
+  // ("LIKE or GLOB pattern too complex") e instr() trata % e _ como texto literal.
+  // lower() do SQLite só converte ASCII — mesma semântica que o LIKE tinha.
   if (f.q) {
-    const padrao = `%${escaparLike(f.q)}%`;
-    clausulas.push(`(i.titulo LIKE ? ESCAPE '\\' OR i.descricao LIKE ? ESCAPE '\\' OR i.local LIKE ? ESCAPE '\\')`);
-    params.push(padrao, padrao, padrao);
+    clausulas.push(
+      `(instr(lower(i.titulo), lower(?)) > 0 OR instr(lower(i.descricao), lower(?)) > 0 OR instr(lower(i.local), lower(?)) > 0)`,
+    );
+    params.push(f.q, f.q, f.q);
   }
   if (f.local) {
-    clausulas.push(`i.local LIKE ? ESCAPE '\\'`);
-    params.push(`%${escaparLike(f.local)}%`);
+    clausulas.push(`instr(lower(i.local), lower(?)) > 0`);
+    params.push(f.local);
   }
   if (f.de) {
     clausulas.push(`i.data_ocorrencia >= ?`);
